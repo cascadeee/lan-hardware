@@ -1,5 +1,9 @@
-﻿using System.Diagnostics;
+﻿using Microsoft.VisualBasic.Devices;
+using System;
+using System.Diagnostics;
+using System.Net;
 using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Text;
 using System.Threading.Tasks;
@@ -9,6 +13,11 @@ namespace WinFormsApp1
 {
     public partial class Form1 : Form
     {
+        Thread scannerThread = new Thread(delegate () { });
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool AllocConsole();
+
         public Form1()
         {
             InitializeComponent();
@@ -16,31 +25,9 @@ namespace WinFormsApp1
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            textBox1.Enabled = checkBox1.Checked;
-            textBox2.Enabled = checkBox2.Checked;
-            textBox3.Enabled = checkBox3.Checked;
-            textBox4.Enabled = checkBox4.Checked;
-            thrad = new Thread(delegate () {
-                doSmth();
-            });
+            AllocConsole();
         }
 
-        private void check(object sender, EventArgs e)
-        {
-            textBox1.Enabled = checkBox1.Checked;
-            if (!checkBox1.Checked) textBox1.Text = "";
-            textBox2.Enabled = checkBox2.Checked;
-            if (!checkBox2.Checked) textBox2.Text = "";
-            textBox3.Enabled = checkBox3.Checked;
-            if (!checkBox3.Checked) textBox3.Text = "";
-            textBox4.Enabled = checkBox4.Checked;
-            if (!checkBox4.Checked) textBox4.Text = "";
-        }
-
-        private void dataGridView1_CellContentClick(object sender, DataGridViewCellEventArgs e)
-        {
-
-        }
         public static bool ExecuteWithTimeLimit(TimeSpan timeSpan, System.Action codeBlock)
         {
             try
@@ -51,7 +38,6 @@ namespace WinFormsApp1
             }
             catch (AggregateException ae)
             {
-                //throw ae.InnerExceptions[0];
                 return false;
             }
         }
@@ -63,17 +49,11 @@ namespace WinFormsApp1
                 res += t[i] + " ";
             return res;
         }
-        private void doSmth()
-        {
 
-            int flag;
-            if (!int.TryParse(textBox1.Text, out flag) && checkBox1.Checked) return;
-            if (!int.TryParse(textBox2.Text, out flag) && checkBox2.Checked) return;
-            if (!int.TryParse(textBox3.Text, out flag) && checkBox3.Checked) return;
-            if (!int.TryParse(textBox4.Text, out flag) && checkBox4.Checked) return;
+        private void HandleMyThread()
+        {
             dataGridView1.Rows.Clear();
             dataGridView1.Refresh();
-            string[] res = new string[7];
             string[] argus = { "", "/NODE:%s computersystem get username","/NODE:%s computersystem get name", "/NODE:%s baseboard get product" , "/NODE:%s cpu get name",
                 "/NODE:%s path win32_videocontroller get Caption", "/NODE:%s MEMORYCHIP get partnumber" };
             var proc = new Process
@@ -83,73 +63,73 @@ namespace WinFormsApp1
                     FileName = "wmic.exe",
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    RedirectStandardOutput = true
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
                 }
             };
-            for (int i1 = 0; i1 < 255; i1++)
-            {
-                if (checkBox1.Checked) i1 = int.Parse(textBox1.Text);
-                for (int i2 = 0; i2 < 255; i2++)
-                {
-                    if (checkBox2.Checked) i2 = int.Parse(textBox2.Text);
-                    for (int i3 = 0; i3 < 255; i3++)
-                    {
-                        if (checkBox3.Checked) i3 = int.Parse(textBox3.Text);
-                        for (int i4 = 0; i4 < 255; i4++)
-                        {
-                            if (checkBox4.Checked) i4 = int.Parse(textBox4.Text);
-                            res[0] = $"{i1}.{i2}.{i3}.{i4}";
-                            label1.Text = res[0];
-                            for (int i = 1; i < 7; i++)
-                            {
-                                string line = "";
-                                proc.StartInfo.Arguments = argus[i].Replace("%s", res[0]);
-                                bool Completed = ExecuteWithTimeLimit(TimeSpan.FromMilliseconds(500), () =>
-                                {
-                                    proc.Start();
-                                    proc.WaitForExit();
-                                });
-                                if (Completed)
-                                {
-                                    while (!proc.StandardOutput.EndOfStream)
-                                    {
-                                        line += proc.StandardOutput.ReadLine();
-                                    }
-                                    res[i] = RemoveFirstWord(line);
-                                }
 
-                            }
-                            if (res[3] != "" && res[3] != null)
-                                this.dataGridView1.Rows.Add(res);
-                            for (int i = 0; i < res.Length; i++)
-                            {
-                                res[i] = null;
-                            }
-                            if (checkBox4.Checked) break;
+            var list = new IPRange(textBox1.Text).GetAllIP();
+
+            foreach (var item in list)
+            {
+                string[] res = new string[7];
+                res[0] = item.ToString();
+                label1.Text = res[0];
+                bool Completed = false;
+                string errors = "";
+                for (int i = 1; i < 7; i++)
+                { 
+                    proc.StartInfo.Arguments = argus[i].Replace("%s", res[0]);
+                    Completed = ExecuteWithTimeLimit(TimeSpan.FromMilliseconds(1000), () =>
+                    {
+                        proc.Start();
+                        proc.WaitForExit();
+                    });
+                    if (Completed)
+                    {
+                        string line = "";
+                        while (!proc.StandardOutput.EndOfStream)
+                        {
+                            line += proc.StandardOutput.ReadToEnd();
+                            errors += proc.StandardError.ReadToEnd();
                         }
-                        if (checkBox3.Checked) break;
+
+                        if (errors.Length > 0)
+                        {
+                            Console.WriteLine(errors);
+                            break;
+                        }
+                        res[i] = RemoveFirstWord(line);
+                    } else
+                    {
+                        errors = $"Узел: {item.ToString()}\nОШИБКА.\nОписание: Превышено время ожидания ответа";
+                        Console.WriteLine(errors);
+                        break;
                     }
-                    if (checkBox2.Checked) break;
+
                 }
-                if (checkBox1.Checked) break;
+                if (Completed && errors.Length == 0)
+                    this.dataGridView1.Rows.Add(res);
+                
             }
+
+                            
+
             button1.Enabled = true;
-            try
-            {
-                thrad.Abort();
-            }
-            catch (Exception)
-            {
-            }
-            
+            return;
         }
-        bool isSearching = false;
-        Thread thrad;
+
+
         private void button1_Click(object sender, EventArgs e)
         {
             button1.Enabled = false;
             System.Windows.Forms.Control.CheckForIllegalCrossThreadCalls = false;
-            thrad.Start();
+            if (!scannerThread.IsAlive)
+            {
+                scannerThread = new Thread(HandleMyThread);
+                scannerThread.IsBackground = true;
+                scannerThread.Start();
+            }
         }
 
         private void copyAlltoClipboard()
@@ -207,6 +187,11 @@ namespace WinFormsApp1
                 Clipboard.Clear();
                 dataGridView1.ClearSelection();
             }
+        }
+
+        private void label2_Click(object sender, EventArgs e)
+        {
+
         }
     }
 }
