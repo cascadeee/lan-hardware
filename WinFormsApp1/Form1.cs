@@ -99,7 +99,7 @@ namespace WinFormsApp1
                             Console.WriteLine(errors);
                             break;
                         }
-                        res[i] = RemoveFirstWord(line);
+                        res[i] = RemoveFirstWord(line).Replace("\r\n", string.Empty);
                     } else
                     {
                         errors = $"Узел: {item.ToString()}\nОШИБКА.\nОписание: Превышено время ожидания ответа";
@@ -109,14 +109,9 @@ namespace WinFormsApp1
 
                 }
                 if (Completed && errors.Length == 0)
-                    this.dataGridView1.Rows.Add(res);
-                
+                    this.dataGridView1.Rows.Add(res);         
             }
-
-                            
-
             button1.Enabled = true;
-            return;
         }
 
 
@@ -178,7 +173,14 @@ namespace WinFormsApp1
                 delRng.Delete(Type.Missing);
                 xlWorkSheet.get_Range("A1").Select();
                 xlWorkBook.SaveAs(sfd.FileName, Excel.XlFileFormat.xlWorkbookNormal, misValue, misValue, misValue, misValue, Excel.XlSaveAsAccessMode.xlExclusive, misValue, misValue, misValue, misValue, misValue);
-                xlexcel.DisplayAlerts = true;
+                try
+                {
+                    xlexcel.DisplayAlerts = true;
+                }
+                catch (Exception)
+                {
+                    MessageBox.Show("Файл уже используется");
+                }
                 xlWorkBook.Close(true, misValue, misValue);
                 xlexcel.Quit();
                 releaseObject(xlWorkSheet);
